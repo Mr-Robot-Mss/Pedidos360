@@ -1,0 +1,40 @@
+openapi: 3.0.1
+info:
+  title: Pedidos360 API
+  version: 1.0.0
+servers:
+  - url: https://REEMPLAZAR_API_ID.execute-api.REEMPLAZAR_REGION.amazonaws.com
+components:
+  securitySchemes:
+    AzureJwtAuthorizer:
+      type: oauth2
+      flows: {}
+      x-amazon-apigateway-authorizer:
+        type: jwt
+        identitySource: "$request.header.Authorization"
+        jwtConfiguration:
+          audience:
+            - aa760abe-b8ea-496e-a917-a8e34661f169
+            - api://aa760abe-b8ea-496e-a917-a8e34661f169
+          issuer: https://login.microsoftonline.com/d38cfd47-67bd-41b2-bd5b-28327c891235/v2.0
+paths:
+  /api/{proxy+}:
+    parameters:
+      - in: path
+        name: proxy
+        required: true
+        schema: { type: string }
+    get:
+      security:
+        - AzureJwtAuthorizer: []
+      responses:
+        "200": { description: Respuesta correcta }
+        "401": { description: Token ausente o inválido }
+        "403": { description: Permisos insuficientes }
+      x-amazon-apigateway-integration:
+        type: http_proxy
+        httpMethod: GET
+        payloadFormatVersion: "1.0"
+        uri: http://REEMPLAZAR_EC2_PUBLIC_DNS:8080/api/{proxy}
+        requestParameters:
+          overwrite:path: "$request.path.proxy"
