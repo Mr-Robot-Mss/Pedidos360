@@ -3,6 +3,20 @@ server:
 spring:
   application:
     name: orders-service
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USER:guest}
+    password: ${RABBITMQ_PASSWORD:guest}
+    listener:
+      simple:
+        acknowledge-mode: manual
+        retry:
+          enabled: true
+          max-attempts: 3
+          initial-interval: 1000
+          multiplier: 2.0
+          max-interval: 5000
   datasource:
     url: ${DB_URL:jdbc:h2:mem:ordersdb;DB_CLOSE_DELAY=-1}
     username: ${DB_USER:sa}
@@ -11,3 +25,18 @@ spring:
     hibernate:
       ddl-auto: ${DDL_AUTO:update}
     open-in-view: false
+
+pedidos360:
+  rabbitmq:
+    exchanges:
+      orders: pedidos360.orders.exchange
+      dlx: pedidos360.orders.dlx
+    queues:
+      notifications: pedidos360.notifications.queue
+      tickets: pedidos360.tickets.queue
+      dlq: pedidos360.orders.dlq
+    routing-keys:
+      order-created: orders.created
+      notification: orders.notification
+      ticket: orders.ticket
+      dead: orders.dead

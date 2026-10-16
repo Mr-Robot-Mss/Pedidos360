@@ -1,10 +1,11 @@
 # Pedidos360 - Backend
 
-Backend cloud native construido como proyecto Maven multimódulo con tres componentes independientes:
+Backend cloud native construido como proyecto Maven multimódulo con cuatro componentes independientes:
 
 - `bff-service` (8080): único punto público. Valida JWT de Microsoft Entra ID y aplica autorización.
 - `orders-service` (8081): microservicio de pedidos con entidad y repositorio JPA.
 - `catalog-service` (8082): microservicio de catálogo con entidad y repositorio JPA.
+- `rabbit-admin-service` (8083): API interna para administrar colas, exchanges y bindings de RabbitMQ.
 
 ## Arquitectura
 
@@ -14,6 +15,10 @@ flowchart LR
   G -->|JWT validado| B[BFF Spring Boot]
   B --> O[Orders Service]
   B --> C[Catalog Service]
+  O --> R[RabbitMQ]
+  R --> N[Notifications Consumer]
+  R --> T[Tickets Consumer]
+  R --> D[DLQ]
   O --> DB[(Base de datos)]
   C --> DB
 ```
@@ -45,12 +50,62 @@ mvn clean test
 mvn -pl orders-service spring-boot:run
 mvn -pl catalog-service spring-boot:run
 mvn -pl bff-service spring-boot:run
+mvn -pl rabbit-admin-service spring-boot:run
 ```
 
 O ejecutar los tres componentes:
 
 ```bash
 docker compose up --build
+```
+
+RabbitMQ queda disponible en:
+
+| Servicio | URL / puerto | Credenciales |
+|---|---|---|
+| AMQP | `localhost:5672` | `guest` / `guest` |
+| Management UI | `http://localhost:15672` | `guest` / `guest` |
+
+## Mensajería RabbitMQ
+
+Los nombres de colas, exchanges y routing keys están centralizados en `orders-service/src/main/resources/application.yml`, bajo `pedidos360.rabbitmq`.
+
+| Recurso | Nombre |
+|---|---|
+| Exchange principal | `pedidos360.orders.exchange` |
+| Exchange DLX | `pedidos360.orders.dlx` |
+| Cola de notificaciones | `pedidos360.notifications.queue` |
+| Cola de tickets | `pedidos360.tickets.queue` |
+| Cola DLQ | `pedidos360.orders.dlq` |
+
+Flujo implementado:
+
+1. El frontend crea un pedido demo mediante el BFF.
+2. El BFF llama a `orders-service`.
+3. `orders-service` guarda el pedido y publica dos eventos asincronos: notificacion y ticket.
+4. Los consumidores procesan mensajes con `@RabbitListener` y ACK manual.
+5. Si el mensaje es invalido o falla luego del reintento, se rechaza con `requeue=false` y RabbitMQ lo mueve a la DLQ.
+6. El consumidor de DLQ registra el mensaje fallido en logs.
+
+## API administradora de RabbitMQ
+
+Endpoints internos de `rabbit-admin-service`:
+
+| Metodo | Ruta | Uso |
+|---|---|---|
+| `POST` | `/internal/rabbit/queues` | Crear cola |
+| `DELETE` | `/internal/rabbit/queues/{name}` | Eliminar cola |
+| `POST` | `/internal/rabbit/exchanges` | Crear exchange |
+| `DELETE` | `/internal/rabbit/exchanges/{name}` | Eliminar exchange |
+| `POST` | `/internal/rabbit/bindings` | Crear binding |
+| `DELETE` | `/internal/rabbit/bindings` | Eliminar binding |
+
+Ejemplo para crear una cola con DLQ:
+
+```bash
+curl -X POST http://localhost:8083/internal/rabbit/queues \
+  -H "Content-Type: application/json" \
+  -d '{"name":"demo.queue","durable":true,"deadLetterExchange":"pedidos360.orders.dlx","deadLetterRoutingKey":"orders.dead","messageTtl":30000}'
 ```
 
 ## Endpoints y autorización
